@@ -8,6 +8,9 @@ import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Collections; // For Collection interface
+
+
 
 /**
  * Symbol table will map each symbol from Crux source code to its declaration or appearance in the
@@ -85,6 +88,20 @@ public final class SymbolTable {
   SymbolTable(PrintStream err) {
     this.err = err;
     //TODO
+    symbolScopes.add(new HashMap<String, Symbol>());
+
+    TypeList tl1 = TypeList.of(new BoolType());
+    TypeList tl2 = TypeList.of(new IntType());
+    TypeList tl3 = TypeList.of(new IntType());
+
+
+    add(null, "readInt", new FuncType(new TypeList(), new IntType())); // TODO functype?
+    add(null, "readChar", new FuncType(new TypeList(), new IntType()));
+    add(null, "printBool", new FuncType(tl1, new VoidType()));
+    add(null, "printInt", new FuncType(tl2, new VoidType()));
+    add(null, "printChar", new FuncType(tl3, new VoidType()));
+    add(null, "println", new FuncType(new TypeList(), new VoidType()));
+
   }
 
   boolean hasEncounteredError() {
@@ -97,6 +114,7 @@ public final class SymbolTable {
 
   void enter() {
     //TODO
+    symbolScopes.add(new HashMap<String, Symbol>());
   }
 
   /**
@@ -105,6 +123,9 @@ public final class SymbolTable {
 
   void exit() {
     //TODO
+    if (!symbolScopes.isEmpty()) {
+      symbolScopes.remove(symbolScopes.size() - 1);
+    }
   }
 
   /**
@@ -113,7 +134,16 @@ public final class SymbolTable {
    */
   Symbol add(Position pos, String name, Type type) {
     //TODO
-    return null;
+    Map<String, Symbol> currentScope = symbolScopes.get(symbolScopes.size() - 1);
+    if (currentScope.containsKey(name)) {
+      err.printf("DeclarationError%s[Symbol %s is already defined.]%n", pos, name);
+      encounteredError = true;
+      return new Symbol(name, "DeclarationError");
+    } else {
+      Symbol newSymbol = new Symbol(name, type);
+      currentScope.put(name, newSymbol);
+      return newSymbol;
+    }
   }
 
   /**
@@ -136,6 +166,13 @@ public final class SymbolTable {
    */
   private Symbol find(String name) {
     //TODO
+    for (int i = symbolScopes.size() - 1; i >= 0; i--) {
+      Map<String, Symbol> scope = symbolScopes.get(i);
+      Symbol found = scope.get(name);
+      if (found != null) {
+        return found;
+      }
+    }
     return null;
   }
 }

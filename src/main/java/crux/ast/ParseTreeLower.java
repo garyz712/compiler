@@ -1,5 +1,6 @@
 package crux.ast;
 
+import com.sun.jdi.IntegerType;
 import crux.ast.*;
 import crux.ast.OpExpr.Operation;
 import crux.pt.CruxBaseVisitor;
@@ -43,6 +44,16 @@ public final class ParseTreeLower {
     return symTab.hasEncounteredError();
   }
 
+  public Type makeType(String name) {
+    if (name.equals("int") ){
+      return new IntType();
+    }else if (name.equals("bool")){
+      return new BoolType();
+    }else if (name.equals("void")){
+      return new VoidType();
+    }
+    throw new AssertionError("No type found");
+  }
 
   /**
    * Lower top-level parse tree to AST
@@ -51,7 +62,16 @@ public final class ParseTreeLower {
    */
 
   public DeclarationList lower(CruxParser.ProgramContext program) {
-    return null;
+    ArrayList<Declaration> list = new ArrayList<Declaration> ();
+    CruxParser.DeclListContext declListCxt = program.declList();
+
+    for(CruxParser.DeclContext context: declListCxt.decl()) {
+      Declaration node = context.accept(declVisitor);
+      list.add(node);
+    }
+
+    return new DeclarationList(makePosition(declListCxt), list); // TODO Position? declListCxt or program
+
   }
 
   /**
@@ -60,7 +80,17 @@ public final class ParseTreeLower {
    * @return a {@link StmtList} AST object.
    */
 
-  // private StatementList lower(CruxParser.StmtListContext stmtList) { }
+  private StatementList lower(CruxParser.StmtListContext stmtList) {
+    ArrayList<Statement> list = new ArrayList<Statement> ();
+
+    for(CruxParser.StmtContext context: stmtList.stmt()) {
+      Statement node = context.accept(stmtVisitor);
+      list.add(node);
+    }
+
+    return new StatementList(makePosition(stmtList), list);
+
+  }
 
 
   /**
@@ -68,7 +98,12 @@ public final class ParseTreeLower {
    *
    * @return a {@link StmtList} AST object.
    */
-  // private StatementList lower(CruxParser.StmtBlockContext stmtBlock) { }
+  private StatementList lower(CruxParser.StmtBlockContext stmtBlock) {
+    symTab.enter();
+    StatementList stmtList = lower(stmtBlock.stmtList());
+    symTab.exit();
+    return stmtList;
+  }
 
   /**
    * A parse tree visitor to create AST nodes derived from {@link Declaration}
@@ -80,10 +115,18 @@ public final class ParseTreeLower {
      * @return an AST {@link VariableDeclaration}
      */
 
-    /*
-     * @Override
-     * public VariableDeclaration visitVarDecl(CruxParser.VarDeclContext ctx) { }
-     */
+
+     @Override
+     public VariableDeclaration visitVarDecl(CruxParser.VarDeclContext ctx) {
+      var name = ctx.Identifier().getText();
+      String typeStr = ctx.type().Identifier().getText(); //TODO Identifier?
+      Type type = makeType(typeStr);
+
+      Position pos = makePosition(ctx);
+      Symbol symbol = symTab.add(pos, name, type);
+      return new VariableDeclaration(pos, symbol);
+     }
+
 
 
     /**
@@ -91,10 +134,18 @@ public final class ParseTreeLower {
      *
      * @return an AST {@link ArrayDeclaration}
      */
-    /*
-     *    @Override
-     * public Declaration visitArrayDecl(CruxParser.ArrayDeclContext ctx) { }
-     */
+
+    @Override
+    public Declaration visitArrayDecl(CruxParser.ArrayDeclContext ctx) {
+      var name = ctx.Identifier().getText();
+      String typeStr = ctx.type().Identifier().getText();
+      Type eleType = makeType(typeStr);
+      var type = new ArrayType(Long.parseLong(ctx.Integer().toString()), eleType);
+      Position pos = makePosition(ctx);
+      var symbol = symTab.add(pos, name, type);
+      return new ArrayDeclaration(pos, symbol);
+    }
+
 
 
     /**
@@ -102,10 +153,40 @@ public final class ParseTreeLower {
      *
      * @return an AST {@link FunctionDefinition}
      */
-    /*
-     *    @Override
-     * public Declaration visitFunctionDefn(CruxParser.FunctionDefnContext ctx) { }
-     */
+     @Override
+     public Declaration visitFunctionDefn(CruxParser.FunctionDefnContext ctx) {
+       String name = ctx.Identifier().getText();
+       TypeList tl = new TypeList();
+       String typeStr = ctx.type().Identifier().getText();
+       Type returnType = makeType(typeStr);
+
+       //System.out.println(typeStr);
+
+       for (CruxParser.ParamContext pc: ctx.paramList().param()){
+         String pctTypeStr = pc.type().Identifier().getText();
+         Type pcType = makeType(pctTypeStr);
+         tl.append(pcType);
+       }
+       Type type = new FuncType(tl, returnType);
+       Position pos = makePosition(ctx);
+       Symbol symbol = symTab.add(pos, name, type); //TODO scope?
+
+       ArrayList<Symbol> sl = new ArrayList<Symbol> ();
+       symTab.enter();
+       for (CruxParser.ParamContext pc: ctx.paramList().param()){
+         String pcName = pc.Identifier().getText();
+         String pctTypeStr = pc.type().Identifier().getText();
+         Position pos1 = makePosition(pc);
+         Type pcType = makeType(pctTypeStr);
+         Symbol symbol1 = symTab.add(pos1, pcName, pcType);
+         sl.add(symbol1);
+       }
+
+       StatementList body = lower(ctx.stmtBlock());
+       symTab.exit();
+       return new FunctionDefinition(pos, symbol, sl, body);
+     }
+
   }
 
 
@@ -114,39 +195,30 @@ public final class ParseTreeLower {
    */
 
   private final class StmtVisitor extends CruxBaseVisitor<Statement> {
-    /**
-     * Visit a parse tree var decl and create an AST {@link VariableDeclaration}. Since
-     * {@link VariableDeclaration} is both {@link Declaration} and {@link Statement}, we simply
-     * delegate this to {@link DeclVisitor#visitArrayDecl(CruxParser.ArrayDeclContext)} which we
-     * implement earlier.
-     *
-     * @return an AST {@link VariableDeclaration}
-     */
 
-    /*
-     * @Override
-     * public Statement visitVarDecl(CruxParser.VarDeclContext ctx) { }
-     */
+
+     @Override
+     public Statement visitVarDecl(CruxParser.VarDeclContext ctx) {
+       return declVisitor.visitVarDecl(ctx);
+
+     }
+
 
     /**
      * Visit a parse tree assignment stmt and create an AST {@link Assignment}
      *
      * @return an AST {@link Assignment}
      */
-    /*
-     * @Override
-     * public Statement visitAssignStmt(CruxParser.AssignStmtContext ctx) { }
-     */
 
-    /**
-     * Visit a parse tree assignment nosemi stmt and create an AST {@link Assignment}
-     *
-     * @return an AST {@link Assignment}
-     */
-    /*
-     * @Override
-     * public Statement visitAssignStmtNoSemi(CruxParser.AssignStmtNoSemiContext ctx) { }
-     */
+     @Override
+     public Statement visitAssignStmt(CruxParser.AssignStmtContext ctx) {
+       Position pos = makePosition(ctx);
+       Expression lhs = ctx.designator().accept(exprVisitor);
+       Expression rhs = ctx.expr0().accept(exprVisitor);
+       return new Assignment(pos, lhs, rhs);
+
+     }
+
 
     /**
      * Visit a parse tree call stmt and create an AST {@link Call}. Since {@link Call} is both
@@ -155,10 +227,15 @@ public final class ParseTreeLower {
      *
      * @return an AST {@link Call}
      */
-    /*
-     *    @Override
-     * public Statement visitCallStmt(CruxParser.CallStmtContext ctx) { }
-     */
+
+     @Override
+     public Statement visitCallStmt(CruxParser.CallStmtContext ctx) {
+
+
+          return exprVisitor.visitCallExpr(ctx.callExpr());
+
+        }
+
 
     /**
      * Visit a parse tree if-else branch and create an AST {@link IfElseBranch}. The template code
@@ -167,10 +244,17 @@ public final class ParseTreeLower {
      *
      * @return an AST {@link IfElseBranch}
      */
-    /*
-     * @Override
-     *    public Statement visitIfStmt(CruxParser.IfStmtContext ctx) { }
-     */
+
+     @Override
+     public Statement visitIfStmt(CruxParser.IfStmtContext ctx) {
+       Position pos = makePosition(ctx);
+       Expression condition = ctx.expr0().accept(exprVisitor);
+       StatementList thenBlock = lower(ctx.stmtBlock(0));
+       StatementList elseBlock = ctx.stmtBlock().size() > 1 ? lower(ctx.stmtBlock(1)) : new StatementList(pos, new ArrayList<Statement>());
+       return new IfElseBranch(pos, condition, thenBlock, elseBlock);
+     }
+
+
 
     /**
      * Visit a parse tree for loop and create an AST {@link Loop}. You'll going to use a similar
@@ -178,10 +262,20 @@ public final class ParseTreeLower {
      *
      * @return an AST {@link Loop}
      */
-    /*
-     * @Override
-     *    public Statement visitLoopStmt(CruxParser.LoopStmtContext ctx) {}
-     */
+
+     @Override
+     public Statement visitLoopStmt(CruxParser.LoopStmtContext ctx) {
+
+       // Create a position for the loop statement
+       Position pos = makePosition(ctx);
+
+       // Lower the stmtBlock context to an AST StatementList
+       StatementList stmtList = lower(ctx.stmtBlock());
+
+       // Create and return a new Loop node with the lowered statement list
+       return new Loop(pos, stmtList); //TODO condition?
+     }
+
 
     /**
      * Visit a parse tree return stmt and create an AST {@link Return}. Here we show a simple
@@ -189,65 +283,218 @@ public final class ParseTreeLower {
      *
      * @return an AST {@link Return}
      */
-    //@Override
-    //public Statement visitReturnStmt(CruxParser.ReturnStmtContext ctx) {}
+    @Override
+    public Statement visitReturnStmt(CruxParser.ReturnStmtContext ctx) {
+      Expression expr = ctx.expr0().accept(exprVisitor);
+      Position pos = makePosition(ctx);
+      return new Return(pos, expr);
+
+    }
 
     /**
      * Creates a Break node
      */
-    //@Override
-    //public Statement visitBreakStmt(CruxParser.BreakStmtContext ctx) {}
+    @Override
+    public Statement visitBreakStmt(CruxParser.BreakStmtContext ctx) {
+      Position pos = makePosition(ctx);
+      return new Break(pos);
+    }
 
     /**
      * Creates a Continue node
      */
-    //@Override
-    //public Statement visitContinueStmt(CruxParser.ContinueStmtContext ctx) {}
+    @Override
+    public Statement visitContinueStmt(CruxParser.ContinueStmtContext ctx) {
+      Position pos = makePosition(ctx);
+      return new Continue(pos);
+    }
   }
 
   private final class ExprVisitor extends CruxBaseVisitor<Expression> {
     /**
      * Parse Expr0 to OpExpr Node Parsing the expr should be exactly as described in the grammer
      */
-    // @Override
-    //public Expression visitExpr0(CruxParser.Expr0Context ctx) {}
+     @Override
+     public Expression visitExpr0(CruxParser.Expr0Context ctx) {
+       if (ctx.op0() == null) {
+         return ctx.expr1(0).accept(exprVisitor);
+       } else {
+         //We expression1 op1 expression2 case
+         Position pos = makePosition(ctx);
+         Expression lhs = ctx.expr1(0).accept(exprVisitor);
+         Expression rhs = ctx.expr1(1).accept(exprVisitor);
+         CruxParser.Op0Context op0 = ctx.op0();
+         String opStr = op0.getText();
+         Operation operation;
+         switch (opStr){
+           case ">=":
+             operation = Operation.GE;
+             break;
+           case "<=":
+             operation = Operation.LE;
+             break;
+           case "!=":
+             operation = Operation.NE;
+             break;
+           case "==":
+             operation = Operation.EQ;
+             break;
+           case ">":
+             operation = Operation.GT;
+             break;
+           case "<":
+             operation = Operation.LT;
+             break;
+           default:
+             throw new AssertionError("No operation 0 found");
+         }
+
+         return new OpExpr(pos, operation, lhs, rhs);
+       }
+
+
+     }
 
     /**
      * Parse Expr1 to OpExpr Node Parsing the expr should be exactly as described in the grammer
      */
-    //@Override
-    //public Expression visitExpr1(CruxParser.Expr1Context ctx) {}
+    @Override
+    public Expression visitExpr1(CruxParser.Expr1Context ctx) {
+      if (ctx.op1() == null) {
+        return ctx.expr2().accept(exprVisitor);
+      } else {
+        //We expression1 op1 expression2 case
+        Position pos = makePosition(ctx);
+        Expression lhs = ctx.expr1().accept(exprVisitor);
+        Expression rhs = ctx.expr2().accept(exprVisitor);
+        CruxParser.Op1Context op1 = ctx.op1();
+        String opStr = op1.getText();
+        Operation operation;
+        switch (opStr) {
+          case "+":
+            operation = Operation.ADD;
+            break;
+          case "-":
+            operation = Operation.SUB;
+            break;
+          case "||":
+            operation = Operation.LOGIC_OR;
+            break;
+          default:
+            throw new AssertionError("No operation 1 found");
+        }
+
+        return new OpExpr(pos, operation, lhs, rhs);
+      }
+    }
 
 
     /**
      * Parse Expr2 to OpExpr Node Parsing the expr should be exactly as described in the grammer
      */
-    //@Override
-    //public Expression visitExpr2(CruxParser.Expr2Context ctx) {}
+
+    @Override
+    public Expression visitExpr2(CruxParser.Expr2Context ctx) {
+        if (ctx.op2() == null) {
+          return ctx.expr3().accept(exprVisitor);
+        } else {
+          //We expression1 op1 expression2 case
+          Position pos = makePosition(ctx);
+          Expression lhs = ctx.expr2().accept(exprVisitor);
+          Expression rhs = ctx.expr3().accept(exprVisitor);
+          CruxParser.Op2Context op2 = ctx.op2();
+          String opStr = op2.getText();
+          Operation operation;
+          switch (opStr){
+            case "*":
+              operation = Operation.MULT;
+              break;
+            case "/":
+              operation = Operation.DIV;
+              break;
+            case "&&":
+              operation = Operation.LOGIC_AND;
+              break;
+            default:
+              throw new AssertionError("No operation 2 found");
+          }
+
+          return new OpExpr(pos, operation, lhs, rhs);
+        }
+    }
 
     /**
      * Parse Expr3 to OpExpr Node Parsing the expr should be exactly as described in the grammer
      */
     //@Override
-    //public Expression visitExpr3(CruxParser.Expr3Context ctx) {}
+    public Expression visitExpr3(CruxParser.Expr3Context ctx) {
+        if (ctx.designator() != null) {
+          return ctx.designator().accept(exprVisitor);
+        } else if (ctx.literal() != null) {
+          return ctx.literal().accept(exprVisitor);
+        } else if (ctx.expr3() != null) { //TODO correct?
+          Position pos = makePosition(ctx);
+          return new OpExpr(pos, Operation.LOGIC_NOT, ctx.expr3().accept(exprVisitor), null);
+        } else if (ctx.callExpr() != null){
+          return  ctx.callExpr().accept(exprVisitor);
+        }
+        else {
+          return ctx.expr0().accept(exprVisitor);
+        }
+
+      }
 
     /**
      * Create an Call Node
      */
-    //@Override
-    //public Call visitCallExpr(CruxParser.CallExprContext ctx) {}
+    @Override
+    public Call visitCallExpr(CruxParser.CallExprContext ctx) {
+      Position pos = makePosition(ctx);
+      String name = ctx.Identifier().getText();
+      Symbol symbol = symTab.lookup(pos, name);
+      ArrayList<Expression> el = new ArrayList<Expression> ();
+
+      for (CruxParser.Expr0Context ec: ctx.exprList().expr0()) {
+          el.add(ec.accept(exprVisitor));
+      }
+      return new Call(pos, symbol, el);
+    }
 
     /**
      * visitDesignator will check for a name or ArrayAccess FYI it should account for the case when
      * the designator was dereferenced
      */
-    //@Override
-    //public Expression visitDesignator(CruxParser.DesignatorContext ctx) {}
+    @Override
+    public Expression visitDesignator(CruxParser.DesignatorContext ctx) {
+        String name = ctx.Identifier().getText();
+        Position pos = makePosition(ctx);
+        Symbol symbol = symTab.lookup(pos, name);
+        if (ctx.expr0()!= null) {
+          Expression index = ctx.expr0().accept(exprVisitor);
+          return new ArrayAccess(pos, symbol, index);
+        }else{
+          return new VarAccess(pos, symbol);
+        }
+    }
+
 
     /**
      * Create an Literal Node
      */
-    //@Override
-    //public Expression visitLiteral(CruxParser.LiteralContext ctx) {}
+    @Override
+    public Expression visitLiteral(CruxParser.LiteralContext ctx) {
+      String number = ctx.getText();
+      Position pos = makePosition(ctx);
+      try {
+        Integer.parseInt(number);
+        Integer i = new Integer(number);
+        return new LiteralInt(pos, i);
+      } catch (NumberFormatException e) {
+        Boolean i = new Boolean(number); //TODO correct?
+        return new LiteralBool(pos, i);
+      }
+
+    }
+
   }
 }
