@@ -70,7 +70,7 @@ public final class ParseTreeLower {
       list.add(node);
     }
 
-    return new DeclarationList(makePosition(declListCxt), list); // TODO Position? declListCxt or program
+    return new DeclarationList(makePosition(program), list); // TODO Position? declListCxt or program
 
   }
 
@@ -119,7 +119,7 @@ public final class ParseTreeLower {
      @Override
      public VariableDeclaration visitVarDecl(CruxParser.VarDeclContext ctx) {
       var name = ctx.Identifier().getText();
-      String typeStr = ctx.type().Identifier().getText(); //TODO Identifier?
+      String typeStr = ctx.type().Identifier().getText();
       Type type = makeType(typeStr);
 
       Position pos = makePosition(ctx);
