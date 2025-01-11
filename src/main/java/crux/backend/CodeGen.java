@@ -334,7 +334,6 @@ public final class CodeGen extends InstVisitor {
     }
 
 
-
     if (counter > 7){
       if (counter%2 == 0){ //if there are odd number of arguments
         out.printCode("subq $8, %rsp");

@@ -511,12 +511,8 @@ public final class ASTLower implements NodeVisitor<InstPair> {
     loopExit = exit;
     loopHead = head;
     InstPair body = loop.getBody().accept(this);
-    if (body.getStart() != null){
-      head.setNext(0, body.getStart());
-    }
-    if (body.getEnd() != exit){
-      body.getEnd().setNext(0, head);
-    }
+    head.setNext(0, body.getStart());
+    body.getEnd().setNext(0, head);
 
     loopExit = outerExit;
     loopHead = outerHead;
